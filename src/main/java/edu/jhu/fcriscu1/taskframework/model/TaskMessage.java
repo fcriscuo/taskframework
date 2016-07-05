@@ -30,13 +30,12 @@ public class TaskMessage {
     the queue
      */
     public Duration resolveQueueDuration(){
-       return Duration.between(this.getProcessingStartedInstant() ,getTaskRequest().getCreatedInstant());
+       return Duration.between(getTaskRequest().getCreatedInstant(),this.getProcessingStartedInstant() );
     }
 
     public Duration resolveTotalDuration() {
         return Duration.between(getTaskRequest().getCreatedInstant(),this.getProcessingCompleteInstant() );
     }
-
 
     public Duration resolveProcessingDuration() {
         return Duration.between( this.getProcessingStartedInstant(),this.getProcessingCompleteInstant());
@@ -70,7 +69,7 @@ public class TaskMessage {
     }
 
     public String generateReport() {
-        return new StringBuilder("Task ID ")
+        return new StringBuilder("\nTask ID ")
                 .append(this.getTaskRequest().getTaskId())
                 .append(" Queue time: ")
                 .append(this.resolveQueueDuration().toMillis())

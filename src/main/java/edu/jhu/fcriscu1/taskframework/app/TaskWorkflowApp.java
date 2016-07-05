@@ -4,10 +4,13 @@ import com.google.common.collect.Lists;
 import edu.jhu.fcriscu1.taskframework.process.DataQualityProducer;
 import edu.jhu.fcriscu1.taskframework.process.TaskMessageConsumer;
 import edu.jhu.fcriscu1.taskframework.process.TaskProcessor;
+import edu.jhu.fcriscu1.taskframework.service.PropertiesService;
 import edu.jhu.fcriscu1.taskframework.service.TaskQueueService;
 import edu.jhu.fcriscu1.taskframework.simulation.TaskRequestProducer;
 import lombok.extern.log4j.Log4j;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -21,12 +24,15 @@ import java.util.stream.IntStream;
  */
 @Log4j
 public class TaskWorkflowApp {
+    // these values serve as backup for missing properties file entries
     private static final Integer NUM_TASK_PROCESSORS = 4;
     private static final Integer NUM_TASK_REQUESTS = 500;
     private static final Long MIN_TASK_PROCESSING_DURATION = 250L;
     private static final Long MAX_TASK_PROCESSING_DURATION = 1200L;
+    private static final String DEFAULT_OUTPUT_FILENAME = "/tmp/testframework/message.txt";
     private List<Thread> taskProcessorThreadList;
     private CountDownLatch taskLatch = new CountDownLatch(2);
+    private  TaskMessageConsumer messageConsumer;
 
     public TaskWorkflowApp() {
         this.initializeWorkflowServices();
@@ -47,7 +53,11 @@ public class TaskWorkflowApp {
         new Thread(requestProcessorTask).start();
         // wait for the two task threads to complete
         try {
-            taskLatch.await(5L,TimeUnit.MINUTES);
+            Long waitTime = PropertiesService.INSTANCE
+                    .getLongPropertyByName("global.default.max.app.latch.wait.time.minutes")
+                    .orElse(60L);
+            log.info("Main countdown latch wait time  = " +waitTime +" minutes");
+            taskLatch.await(waitTime,TimeUnit.MINUTES);
         } catch (InterruptedException e) {
             log.error(e.getMessage());
             e.printStackTrace();
@@ -58,9 +68,18 @@ public class TaskWorkflowApp {
     private Runnable initializeTaskRequestProducer() {
         return () -> {
             try {
-                new TaskRequestProducer.Builder().requestCount(NUM_TASK_REQUESTS)
-                        .minProcessingDuration(MIN_TASK_PROCESSING_DURATION)
-                        .maxProcessingDuration(MAX_TASK_PROCESSING_DURATION).build()
+                Integer taskRequestCount = PropertiesService.INSTANCE
+                        .getIntegerPropertyByName("orphan.default.number.task.requests")
+                        .orElse(NUM_TASK_REQUESTS);
+                Long minProcessingDuration = PropertiesService.INSTANCE
+                        .getLongPropertyByName("orphan.default.task.min.processing.duration")
+                        .orElse(MIN_TASK_PROCESSING_DURATION);
+                Long maxProcessingDuration = PropertiesService.INSTANCE
+                        .getLongPropertyByName("orphan.default.task.max.processing.duration=1200")
+                        .orElse(MAX_TASK_PROCESSING_DURATION);
+                new TaskRequestProducer.Builder().requestCount(taskRequestCount)
+                        .minProcessingDuration(minProcessingDuration)
+                        .maxProcessingDuration(maxProcessingDuration).build()
                         .generateTaskRequestStream().forEach((tr) -> {
                     try {
                         TaskQueueService.INSTANCE.taskRequestQueue().put(tr);
@@ -83,12 +102,17 @@ public class TaskWorkflowApp {
 
     private Runnable initializeIntervalProcessors(){
      return () -> {
-            CountDownLatch latch = new CountDownLatch(3);
+            Integer numQAThreads = PropertiesService.INSTANCE.getIntegerPropertyByName("qa.default.num.threads")
+                    .orElse(4);
+            CountDownLatch latch = new CountDownLatch(numQAThreads);
+         //TODO: autogenerate the list of runnables
             List<Runnable> runList = Arrays.asList(new DataQualityProducer.Builder().intervalCount(100)
                             .latch(latch)
                             .minProcessingDuration(300L).maxProcessingDuration(1200L).build(),
                     new DataQualityProducer.Builder().intervalCount(400).minProcessingDuration(100L)
                             .latch(latch).maxProcessingDuration(500L).build(),
+                    new DataQualityProducer.Builder().intervalCount(1000).minProcessingDuration(50L)
+                            .latch(latch).maxProcessingDuration(250L).build(),
                     new DataQualityProducer.Builder().intervalCount(1000).minProcessingDuration(200L)
                             .latch(latch).maxProcessingDuration(800L).build());
             // start the threads
@@ -98,7 +122,10 @@ public class TaskWorkflowApp {
                     .peek(Thread::start)
                     .collect(Collectors.toList());
             try {
-                latch.await(10L, TimeUnit.MINUTES);
+                Long latchWaitTime = PropertiesService.INSTANCE
+                        .getLongPropertyByName("global.default.max.internal.latch.wait.time.minutes")
+                        .orElse(10L);
+                latch.await(latchWaitTime, TimeUnit.MINUTES);
                 log.info("Time limit reached");
             } catch (InterruptedException e) {
                 e.printStackTrace();
@@ -110,13 +137,22 @@ public class TaskWorkflowApp {
     }
 
     private void initializeWorkflowServices() {
-        this.taskProcessorThreadList = this.initializeTaskProcessors(NUM_TASK_PROCESSORS);
-        TaskMessageConsumer messageConsumer = new TaskMessageConsumer();
+        Integer numTaskProcessors = PropertiesService.INSTANCE.getIntegerPropertyByName("orphan.default.number.task.processors")
+                .orElse(NUM_TASK_PROCESSORS);
+        this.taskProcessorThreadList = this.initializeTaskProcessors(numTaskProcessors);
+        this.messageConsumer = new TaskMessageConsumer(this.resolveMessageConsumerOutputPath());
+    }
+
+    private Path resolveMessageConsumerOutputPath() {
+        String fileName = PropertiesService.INSTANCE.getStringPropertyByName("message.consumer.output.path")
+                .orElse(DEFAULT_OUTPUT_FILENAME);
+        log.info("Message output file: " + fileName);
+        return Paths.get(fileName);
     }
 
     private void shutdownWorkflowServices(){
-
         this.taskProcessorThreadList.forEach(Thread::interrupt);
+        this.messageConsumer.shutdown();
     }
 
     private List<Thread> initializeTaskProcessors(Integer nProcessors){

@@ -10,7 +10,9 @@ import edu.jhu.fcriscu1.taskframework.model.TaskRequest;
  */
 public enum DatabaseService {
     INSTANCE;
-    private final Integer nConnections = 10;
+    private final Integer DEFAULT_NUM_CONNECTIONS = 10;
+    Integer nConnections = PropertiesService.INSTANCE.getIntegerPropertyByName("database.max.connections")
+            .orElse(DEFAULT_NUM_CONNECTIONS);
     private DatabaseResource databaseResource = new DatabaseResource(nConnections);
 
     public TaskMessage completeDatabaseOperation(TaskRequest taskRequest){

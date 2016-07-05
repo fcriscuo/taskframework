@@ -1,5 +1,6 @@
 package edu.jhu.fcriscu1.taskframework.model;
 
+import edu.jhu.fcriscu1.taskframework.service.PropertiesService;
 import lombok.extern.log4j.Log4j;
 
 import java.time.Duration;
@@ -21,20 +22,23 @@ import java.util.stream.IntStream;
 
 @Log4j
 public class DatabaseResource {
-    //TODO: move constants to a properties file for easier reconfiguration
-    private final Integer DEFAULT_CONNECTIONS = 5;
+
     private final Semaphore semaphore;
     private final Lock connectionLock;
-
     private Boolean freeConnections[];
+    private Long semaphoreWaitTime;
+    private static final Long DEFAULT_SEMAPHORE_WAIT_TIME = 2000L;
+
     public DatabaseResource(Integer nConn) {
-        Integer nConnections = (nConn>0) ? nConn: DEFAULT_CONNECTIONS;
+        Integer nConnections = (nConn>0) ? nConn: 1;
         this.semaphore = new Semaphore(nConnections);
         this.freeConnections = new Boolean[nConnections];
         for(int i = 0; i<nConnections; i++) {
             freeConnections[i] = true;
         }
         this.connectionLock = new ReentrantLock();
+        this.semaphoreWaitTime = PropertiesService.INSTANCE.getLongPropertyByName("database.semaphore.max.wait.time")
+                .orElse(DEFAULT_SEMAPHORE_WAIT_TIME);
     }
 
     public TaskMessage processTask(TaskRequest taskRequest){
@@ -44,7 +48,7 @@ public class DatabaseResource {
         // decrease semaphore count
         try {
             //semaphore.acquire();
-            if(!semaphore.tryAcquire(2000L,TimeUnit.MILLISECONDS) ) {
+            if(!semaphore.tryAcquire(this.semaphoreWaitTime,TimeUnit.MILLISECONDS) ) {
                 message.setMessage("ERROR: " +taskRequest.getTaskId() +" unable to acquire database connection");
                 log.error("Failed to obtain connection for  "+taskRequest.getTaskId());
                 return message;
