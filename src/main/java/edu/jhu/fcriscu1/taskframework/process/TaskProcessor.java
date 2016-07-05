@@ -35,7 +35,7 @@ public class TaskProcessor implements Runnable {
                            try {
                                if(TaskMessageQueue.INSTANCE.getTaskMessageQueue().offer(message,queueTimeout,TimeUnit.MILLISECONDS)){
                                    log.info("Processing completed for task: " +message.getTaskRequest().getTaskId() +" in "
-                                           +message.resolveProcessingDuration().toMillis() +" milliseconds by thred " +Thread.currentThread().getName());
+                                           +message.resolveProcessingDuration().toMillis() +" milliseconds by thread " +Thread.currentThread().getName());
                                    log.info("Task queue size: " +TaskQueueService.INSTANCE.taskRequestQueue().size());
                                } else {
                                    log.error("ERROR: failed to put processing message for task " +message.getTaskRequest().getTaskId()

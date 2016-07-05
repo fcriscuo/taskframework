@@ -105,16 +105,16 @@ public class TaskWorkflowApp {
             Integer numQAThreads = PropertiesService.INSTANCE.getIntegerPropertyByName("qa.default.num.threads")
                     .orElse(4);
             CountDownLatch latch = new CountDownLatch(numQAThreads);
-         //TODO: autogenerate the list of runnables
-            List<Runnable> runList = Arrays.asList(new DataQualityProducer.Builder().intervalCount(100)
-                            .latch(latch)
-                            .minProcessingDuration(300L).maxProcessingDuration(1200L).build(),
-                    new DataQualityProducer.Builder().intervalCount(400).minProcessingDuration(100L)
-                            .latch(latch).maxProcessingDuration(500L).build(),
-                    new DataQualityProducer.Builder().intervalCount(1000).minProcessingDuration(50L)
-                            .latch(latch).maxProcessingDuration(250L).build(),
-                    new DataQualityProducer.Builder().intervalCount(1000).minProcessingDuration(200L)
-                            .latch(latch).maxProcessingDuration(800L).build());
+        // generate a List of DataQualityProducer instances to run on distinct threads
+         List<Runnable> runList =Lists.newArrayList();
+         IntStream.range(1,numQAThreads+1).forEach((i)->
+           runList.add(new DataQualityProducer.Builder()
+                   .intervalCount(PropertiesService.INSTANCE.getIntegerPropertyByName("qa.default.num.intervals").get())
+                   .latch(latch)
+                   .minProcessingDuration(PropertiesService.INSTANCE.getLongPropertyByName("qa.default.min.processing.duration").get())
+                   .maxProcessingDuration(PropertiesService.INSTANCE.getLongPropertyByName("qa.default.max.processing.duration").get())
+                   .build()));
+
             // start the threads
             final List<Thread> threads = runList
                     .stream()
@@ -124,7 +124,7 @@ public class TaskWorkflowApp {
             try {
                 Long latchWaitTime = PropertiesService.INSTANCE
                         .getLongPropertyByName("global.default.max.internal.latch.wait.time.minutes")
-                        .orElse(10L);
+                        .orElse(30L);
                 latch.await(latchWaitTime, TimeUnit.MINUTES);
                 log.info("Time limit reached");
             } catch (InterruptedException e) {
