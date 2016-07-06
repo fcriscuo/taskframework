@@ -23,8 +23,11 @@ public enum TaskQueueService {
     INSTANCE;
 
     //TODO: make this a property
-    private  final Integer QUEUE_SIZE = 100;
-    private BlockingQueue<TaskRequest> taskRequestQueue= Suppliers.memoize(new TaskQueueSupplier(QUEUE_SIZE)).get();
+    private  final Integer taskQueueSize = PropertiesService.INSTANCE
+            .getIntegerPropertyByName("orphan.default.task.queue.size")
+            .orElse(100);
+
+    private BlockingQueue<TaskRequest> taskRequestQueue= Suppliers.memoize(new TaskQueueSupplier(taskQueueSize)).get();
 
     //TODO: incorporate required queue functions directly rather than expose queue
     public BlockingQueue<TaskRequest> taskRequestQueue() { return this.taskRequestQueue;}
@@ -53,7 +56,7 @@ public enum TaskQueueService {
                     TaskRequest tr= TaskQueueService.INSTANCE.taskRequestQueue().take();
                      Duration qTime = Duration.between(tr.getCreatedInstant(),Instant.now());
                     log.info("Dequeued task " +tr.getTaskId() +" queue time= " +qTime.toMillis() +" millisecconds ");
-                    // sleep to mimic a slower dequeue
+                    // sleep to mimic a slower consumer
                     TimeUnit.MILLISECONDS.sleep(500L);
                    latch.countDown();
                } catch (InterruptedException e) {
@@ -63,10 +66,10 @@ public enum TaskQueueService {
             }
             return;
         };
-        // dequeue task requests on sepaarte thread
+        // dequeue task requests on separate thread
         new Thread(dequeueThread).start();
         // create a List of identical TaskRequest objects
-                IntStream.range(1,requestCount).forEach((i) ->
+                IntStream.rangeClosed(1,requestCount).forEach((i) ->
                {
                     try {
                         TaskRequest tr = new TaskRequest.Builder().duration(Duration.ofMillis(1000L)).id("Task_"+i).build();

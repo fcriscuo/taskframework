@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -24,21 +25,21 @@ import java.util.stream.Collectors;
  * Responsible for generating data quality tasks and messages at random intervals
  */
 @Log4j
-public class DataQualityProducer implements Runnable{
+public class DataQualityProducer implements Runnable {
     private static final Integer DEFAULT_INTERVAL = 2000;
     private static final TimeUnit TIME_UNIT = TimeUnit.MILLISECONDS;
     private static final String TASK_ID_PREFIX = "DataQualityTask_";
-    private  Integer inervalCount;
-    private  Long minProcessingDuration;
-    private  Long maxProcessingDuration;
+    private Integer inervalCount;
+    private Long minProcessingDuration;
+    private Long maxProcessingDuration;
     private CountDownLatch latch;
     private final Random random = new Random();
     private static final AtomicInteger COUNT = new AtomicInteger(0);
     private static final Integer MAX_INTERVAL_DELTA = 1000;
     private static final Long DEFAULT_MIN_INTERVAL = 1000L;
-    private static final Long DEFAULT_MAX_QUEUE_WAIT_TIME=2000L;
+    private static final Long DEFAULT_MAX_QUEUE_WAIT_TIME = 2000L;
 
-    private DataQualityProducer(Builder builder){
+    private DataQualityProducer(Builder builder) {
         this.inervalCount = builder.inervalCount;
         this.minProcessingDuration = builder.minProcessingDuration;
         this.maxProcessingDuration = builder.maxProcessingDuration;
@@ -47,18 +48,19 @@ public class DataQualityProducer implements Runnable{
 
 
     private void generateAndProcessTaskRequest() {
-        random.longs(1, minProcessingDuration,maxProcessingDuration+1)
+        Long queueWaitTime = PropertiesService.INSTANCE.getLongPropertyByName("global.default.max.queue.wait.time")
+                .orElse(DEFAULT_MAX_QUEUE_WAIT_TIME);
+        random.longs(1, minProcessingDuration, maxProcessingDuration + 1)
                 .mapToObj((dur) -> {
                             COUNT.incrementAndGet();
-                            return new TaskRequest.Builder().duration(Duration.ofMillis(dur)).id(TASK_ID_PREFIX+ COUNT).build();
+                            return new TaskRequest.Builder().duration(Duration.ofMillis(dur)).id(TASK_ID_PREFIX + COUNT).build();
                         }
-                ).findFirst().ifPresent((request)->{
+                ).findFirst().ifPresent((request) -> {
             TaskMessage message = DatabaseService.INSTANCE.completeDatabaseOperation(request);
-            log.info("Task: " +message.getTaskRequest().getTaskId() +"completed in " +message.resolveProcessingDuration().toMillis() +" milliseconds");
+            log.info("Task: " + message.getTaskRequest().getTaskId() + "completed in " + message.resolveProcessingDuration().toMillis() + " milliseconds");
             try {
-                Long queueWaitTime = PropertiesService.INSTANCE.getLongPropertyByName("global.default.max.queue.wait.time")
-                        .orElse(DEFAULT_MAX_QUEUE_WAIT_TIME);
-                TaskMessageQueue.INSTANCE.getTaskMessageQueue().offer(message,queueWaitTime,TimeUnit.MILLISECONDS);
+
+                TaskMessageQueue.INSTANCE.getTaskMessageQueue().offer(message, queueWaitTime, TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -66,53 +68,55 @@ public class DataQualityProducer implements Runnable{
 
     }
 
-    private Long generateInterval(){
-        return DEFAULT_MIN_INTERVAL + random.nextInt(MAX_INTERVAL_DELTA);
-    }
+    private Supplier<Long> intervalGenerator = () ->
+            DEFAULT_MIN_INTERVAL + random.nextInt(MAX_INTERVAL_DELTA);
 
 
     @Override
     public void run() {
-        log.info("Thread " +Thread.currentThread().getName() +" invoked");
+        log.info("Thread " + Thread.currentThread().getName() + " invoked");
         ExecutorService executor = Executors.newFixedThreadPool(4);
 
-        while (!Thread.currentThread().isInterrupted() && inervalCount > 0){
-           this.generateAndProcessTaskRequest();
+        while (!Thread.currentThread().isInterrupted() && inervalCount > 0) {
+            this.generateAndProcessTaskRequest();
             this.inervalCount--;
             try {
-                TimeUnit.MILLISECONDS.sleep(this.generateInterval());
+                TimeUnit.MILLISECONDS.sleep(intervalGenerator.get());
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }
-        log.info("Thread " +Thread.currentThread().getName() +" completed");
+        log.info("Thread " + Thread.currentThread().getName() + " completed");
         latch.countDown();
     }
 
-
-
     public static class Builder {
-        private  Integer inervalCount;
-        private  Long minProcessingDuration;
-        private  Long maxProcessingDuration;
+        private Integer inervalCount;
+        private Long minProcessingDuration;
+        private Long maxProcessingDuration;
         private CountDownLatch latch;
+
         public Builder intervalCount(Integer count) {
             this.inervalCount = count;
             return this;
         }
-        public Builder minProcessingDuration(Long duration){
+
+        public Builder minProcessingDuration(Long duration) {
             this.minProcessingDuration = duration;
             return this;
         }
-        public Builder maxProcessingDuration(Long duration){
+
+        public Builder maxProcessingDuration(Long duration) {
             this.maxProcessingDuration = duration;
             return this;
         }
-        public Builder latch(CountDownLatch latch){
+
+        public Builder latch(CountDownLatch latch) {
             this.latch = latch;
             return this;
         }
-        public DataQualityProducer build(){
+
+        public DataQualityProducer build() {
             return new DataQualityProducer(this);
         }
     }
@@ -121,14 +125,14 @@ public class DataQualityProducer implements Runnable{
     public static void main(String... args) {
         CountDownLatch latch = new CountDownLatch(3);
         // start the Message consumer
-        TaskMessageConsumer tmc = new TaskMessageConsumer(Paths.get("/tmp/data_quality_log.txt"));
-        List<Runnable> runList = Arrays.asList(new DataQualityProducer.Builder().intervalCount(100)
+        TaskMessageConsumer tmc = new TaskMessageConsumer(Paths.get("/tmp/data_quality_test_log.txt"));
+        List<Runnable> runList = Arrays.asList(new DataQualityProducer.Builder().intervalCount(25)
                         .latch(latch)
                         .minProcessingDuration(300L).maxProcessingDuration(1200L).build(),
-       new Builder().intervalCount(400).minProcessingDuration(100L)
-               .latch(latch).maxProcessingDuration(500L).build(),
-              new DataQualityProducer.Builder().intervalCount(1000).minProcessingDuration(200L)
-                      .latch(latch).maxProcessingDuration(800L).build());
+                new Builder().intervalCount(40).minProcessingDuration(100L)
+                        .latch(latch).maxProcessingDuration(500L).build(),
+                new DataQualityProducer.Builder().intervalCount(10).minProcessingDuration(200L)
+                        .latch(latch).maxProcessingDuration(800L).build());
         // start the threads
         final List<Thread> threads = runList
                 .stream()
@@ -136,11 +140,11 @@ public class DataQualityProducer implements Runnable{
                 .peek(Thread::start)
                 .collect(Collectors.toList());
         try {
-            latch.await(10L,TimeUnit.MINUTES);
-            log.info("Time limit reached");
+            latch.await(60L, TimeUnit.MINUTES);
+            log.info(" DataQualityProducer stand alone wait time limit reached");
         } catch (InterruptedException e) {
             e.printStackTrace();
-        } finally{
+        } finally {
             threads.forEach(Thread::interrupt);
             tmc.shutdown();
         }

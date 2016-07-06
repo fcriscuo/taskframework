@@ -2,6 +2,7 @@ package edu.jhu.fcriscu1.taskframework.process;
 
 import edu.jhu.fcriscu1.taskframework.datastructure.TaskMessageQueue;
 import edu.jhu.fcriscu1.taskframework.service.DatabaseService;
+import edu.jhu.fcriscu1.taskframework.service.PropertiesService;
 import edu.jhu.fcriscu1.taskframework.service.TaskQueueService;
 import edu.jhu.fcriscu1.taskframework.model.TaskMessage;
 import edu.jhu.fcriscu1.taskframework.model.TaskRequest;
@@ -23,13 +24,16 @@ import java.util.stream.Collectors;
  */
 @Log4j
 public class TaskProcessor implements Runnable {
-    private static final Long queueTimeout = 1000L;
+    private static final Long queueTimeout = PropertiesService.INSTANCE
+            .getLongPropertyByName("orphan.default.task.queue.wait.time.limit=200")
+            .orElse(1000L);
 
     @Override
     public void run() {
         try {
             while (!Thread.currentThread().isInterrupted()){
-               this.processTaskRequest( TaskQueueService.INSTANCE.taskRequestQueue().poll(1000L,TimeUnit.MILLISECONDS))
+               this.processTaskRequest( TaskQueueService.INSTANCE.taskRequestQueue()
+                       .poll(queueTimeout,TimeUnit.MILLISECONDS))
                        .ifPresent((message) -> {
                            // put the TaskMessage onto the global TaskMessage queue
                            try {

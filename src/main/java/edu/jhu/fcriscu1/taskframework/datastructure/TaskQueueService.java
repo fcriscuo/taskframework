@@ -68,7 +68,7 @@ public enum TaskQueueService {
         // dequeue task requests on sepaarte thread
         new Thread(dequeueThread).start();
         // create a List of identical TaskRequest objects
-                IntStream.range(1,requestCount+1).forEach((i) ->
+                IntStream.rangeClosed(1,requestCount).forEach((i) ->
                {
                     try {
                         TaskRequest tr = new TaskRequest.Builder().duration(Duration.ofMillis(1000L)).id("Task_"+i).build();

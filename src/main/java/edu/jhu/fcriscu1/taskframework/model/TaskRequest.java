@@ -15,6 +15,7 @@ import java.time.Instant;
 @ToString
 public class TaskRequest  {
     private final String taskId;
+    // how long this task should utilize a resource in msecs
     private final Duration resourceDuration;
     private final Instant createdInstant;
 

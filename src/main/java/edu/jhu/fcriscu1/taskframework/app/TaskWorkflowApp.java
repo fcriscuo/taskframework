@@ -77,6 +77,7 @@ public class TaskWorkflowApp {
                 Long maxProcessingDuration = PropertiesService.INSTANCE
                         .getLongPropertyByName("orphan.default.task.max.processing.duration=1200")
                         .orElse(MAX_TASK_PROCESSING_DURATION);
+                // generate a stream of TaskRequest objects
                 new TaskRequestProducer.Builder().requestCount(taskRequestCount)
                         .minProcessingDuration(minProcessingDuration)
                         .maxProcessingDuration(maxProcessingDuration).build()
@@ -87,9 +88,9 @@ public class TaskWorkflowApp {
                         log.error(e.getMessage());
                     }
                 });
-                // sleep until processing end
+                // sleep until all TaskRequests are removed from the queue
                 while(!TaskQueueService.INSTANCE.taskRequestQueue().isEmpty()){
-                    TimeUnit.SECONDS.sleep(10L);
+                    TimeUnit.SECONDS.sleep(1000L); // check every second
                 }
                 log.info("Task queue is empty");
             } catch (Exception e) {
@@ -107,7 +108,7 @@ public class TaskWorkflowApp {
             CountDownLatch latch = new CountDownLatch(numQAThreads);
         // generate a List of DataQualityProducer instances to run on distinct threads
          List<Runnable> runList =Lists.newArrayList();
-         IntStream.range(1,numQAThreads+1).forEach((i)->
+         IntStream.rangeClosed(1,numQAThreads).forEach((i)->
            runList.add(new DataQualityProducer.Builder()
                    .intervalCount(PropertiesService.INSTANCE.getIntegerPropertyByName("qa.default.num.intervals").get())
                    .latch(latch)
@@ -126,7 +127,7 @@ public class TaskWorkflowApp {
                         .getLongPropertyByName("global.default.max.internal.latch.wait.time.minutes")
                         .orElse(30L);
                 latch.await(latchWaitTime, TimeUnit.MINUTES);
-                log.info("Time limit reached");
+                log.info("Data Quality Latch Time limit reached");
             } catch (InterruptedException e) {
                 e.printStackTrace();
             } finally{
@@ -158,7 +159,7 @@ public class TaskWorkflowApp {
     private List<Thread> initializeTaskProcessors(Integer nProcessors){
         // instantiate a List of TaskProcessors
         List<Runnable> processorList = Lists.newArrayList();
-        IntStream.range(1,nProcessors).forEach((i) ->
+        IntStream.rangeClosed(1,nProcessors).forEach((i) ->
          processorList.add(new TaskProcessor()));
         // start the threads
        return processorList

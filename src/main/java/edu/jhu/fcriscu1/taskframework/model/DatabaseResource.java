@@ -33,11 +33,12 @@ public class DatabaseResource {
         Integer nConnections = (nConn>0) ? nConn: 1;
         this.semaphore = new Semaphore(nConnections);
         this.freeConnections = new Boolean[nConnections];
-        for(int i = 0; i<nConnections; i++) {
-            freeConnections[i] = true;
-        }
+        //initialize the connections as available
+        IntStream.range(0,nConnections).forEach((i) -> freeConnections[i]= true);
+
         this.connectionLock = new ReentrantLock();
-        this.semaphoreWaitTime = PropertiesService.INSTANCE.getLongPropertyByName("database.semaphore.max.wait.time")
+        this.semaphoreWaitTime = PropertiesService.INSTANCE
+                .getLongPropertyByName("database.semaphore.max.wait.time")
                 .orElse(DEFAULT_SEMAPHORE_WAIT_TIME);
     }
 
@@ -47,9 +48,9 @@ public class DatabaseResource {
         message.setProcessingStartedInstant(Instant.now());
         // decrease semaphore count
         try {
-            //semaphore.acquire();
             if(!semaphore.tryAcquire(this.semaphoreWaitTime,TimeUnit.MILLISECONDS) ) {
-                message.setMessage("ERROR: " +taskRequest.getTaskId() +" unable to acquire database connection");
+                message.setMessage("ERROR: " +taskRequest.getTaskId()
+                        +" unable to acquire database connection");
                 log.error("Failed to obtain connection for  "+taskRequest.getTaskId());
                 return message;
             }
@@ -59,10 +60,13 @@ public class DatabaseResource {
                 TimeUnit.MILLISECONDS.sleep(taskRequest.getResourceDuration().toMillis());
                 // set the completion Instant for this task
                 message.setProcessingCompleteInstant(Instant.now());
-                message.setMessage("Task: " +taskRequest.getTaskId() +" completed in " +message.resolveTotalDuration().toMillis() +" milliseconds");
+                message.setMessage("Task: " +taskRequest.getTaskId()
+                        +" completed in " +message.resolveTotalDuration().toMillis()
+                        +" milliseconds");
                 this.releaseConnection(assignedConnection);
             } else {
-                message.setMessage("ERROR: " +taskRequest.getTaskId() +" unable to acquire database connection");
+                message.setMessage("ERROR: " +taskRequest.getTaskId()
+                        +" unable to acquire database connection");
             }
 
         } catch (InterruptedException e) {
@@ -72,7 +76,6 @@ public class DatabaseResource {
             semaphore.release();
             return message;
         }
-
     }
 
     // private method to reserve a connection
@@ -80,7 +83,7 @@ public class DatabaseResource {
         try {
             boolean found = false;
             connectionLock.lock();  // single threaded access to lock
-            OptionalInt iOpt = IntStream.range(0,freeConnections.length-1).filter((i) ->freeConnections[i]).findFirst();
+            OptionalInt iOpt = IntStream.range(0,freeConnections.length).filter((i) ->freeConnections[i]).findFirst();
             if(iOpt.isPresent()){
                 freeConnections[iOpt.getAsInt()] = false;
                 return iOpt.getAsInt();
@@ -99,7 +102,6 @@ public class DatabaseResource {
         } finally {
             connectionLock.unlock();
         }
-
     }
     // main class for standalone testing
     public static void main(String... args) {
